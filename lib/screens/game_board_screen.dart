@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:chase_game/components/dead_piece.dart';
 import 'package:chase_game/components/piece.dart';
 import 'package:chase_game/components/square.dart';
@@ -230,11 +232,11 @@ class _GameBoardState extends State<GameBoard> {
           }
         }
 
-        //
-        if(isInBoard(row + direction, column - 1) && board[row + direction][column - 1] != null && board[row + direction][column - 1]!.isWhite){
+        //pawns can kill diagonally
+        if(isInBoard(row + direction, column - 1) && board[row + direction][column - 1] != null && board[row + direction][column - 1]!.isWhite != piece.isWhite){
           candidateMoves.add([row + direction, column - 1]);
         }
-        if(isInBoard(row + direction, column + 1) && board[row + direction][column + 1] != null && board[row + direction][column + 1]!.isWhite){
+        if(isInBoard(row + direction, column + 1) && board[row + direction][column + 1] != null && board[row + direction][column + 1]!.isWhite != piece.isWhite){
           candidateMoves.add([row + direction, column + 1]);
         }
         break;
@@ -384,6 +386,29 @@ class _GameBoardState extends State<GameBoard> {
     return candidateMoves;
   }
 
+  //calculate real valid moves
+  List<List<int>> calculateRealValidMoves(int row, int col, ChessPiece? piece, bool checkSimulation){
+    List<List<int>> realValidMoves = [];
+    List<List<int>> candidatesMoves = calculateRawValidMoves(row, col, piece);
+
+    //after generating all candidate moves, filter out any that would result in a check
+    if(checkSimulation){
+      for(var move in candidatesMoves) {
+        int endRow = move[0];
+        int endCol = move[1];
+
+        //this will simulate the future move
+        if(simulateMoveIsSafe(piece!, row, col, endRow, endCol)){
+          realValidMoves.add(move);
+        }
+      }
+    }else{
+      realValidMoves = candidatesMoves;
+    }
+
+    return realValidMoves;
+  }
+
   //Move piece
   void movePiece(int newRow, int newColumn){
     //if the new spot has an enemy piece
@@ -394,6 +419,16 @@ class _GameBoardState extends State<GameBoard> {
         whitePiecesTaken.add(capturedPiece);
       } else{
         blackPiecesTaken.add(capturedPiece);
+      }
+    }
+
+    //check if the piece being moved in a king
+    if(selectedPiece!.type == ChessPieceType.king){
+      //update the appropriate king pos
+      if(selectedPiece!.isWhite){
+        whiteKingPosition = [newRow, newColumn];
+      } else{
+        blackKingPosition = [newRow, newColumn];
       }
     }
 
@@ -441,6 +476,48 @@ class _GameBoardState extends State<GameBoard> {
       }
     }
     return false;
+  }
+
+  //Simulate a future move to see if it's safe (doesn't put your own king under attack!)
+  bool simulateMoveIsSafe(ChessPiece piece, int startRow, int startCol, int endRow, int endCol) {
+    //save the current board state
+    ChessPiece? originalDestinationPiece = board[endRow][endCol];
+
+    //if the piece is the king, save it's current position and update to the new one
+    List<int>? originalKingPosition;
+    if(piece.type == ChessPieceType.king){
+      originalKingPosition = piece.isWhite? whiteKingPosition : blackKingPosition;
+
+      //update the king position
+      if(piece.isWhite) {
+        whiteKingPosition = [endRow, endCol];
+      }else{
+        blackKingPosition = [endRow, endCol];
+      }
+    }
+
+    // simulate teh move
+    board[endRow][endCol] = piece;
+    board[startRow][startCol] = null;
+
+    //check if our own king is under attack
+    bool kingInCheck  = isKingInCheck(piece.isWhite);
+
+    //restore board to original state
+    board[startRow][startCol] = piece;
+    board[endRow][endCol] = originalDestinationPiece;
+
+    //if the piece was teh king, restore it original position
+    if(piece.type == ChessPieceType.king){
+      if(piece.isWhite){
+        whiteKingPosition = originalKingPosition!;
+      }else{
+        blackKingPosition = originalKingPosition!;
+      }
+    }
+
+    //if king is in check = true, means it's not a safe move. safe move = false
+    return !kingInCheck;
   }
 
   @override
